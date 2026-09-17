@@ -44,8 +44,9 @@ style = "bold yellow"
 
 ## Limitations
 
-- Single client per session: a second `pst <name>` while one is already
-  attached is rejected rather than sharing the view.
+- Single client per session, no shared view: a second `pst <name>` takes
+  over from whichever client was already attached (disconnecting it)
+  instead of both seeing the session at once.
 - Scrollback is capped at the last 64 KiB of output produced while nobody
   was attached; anything beyond that is dropped, not replayed on reattach.
 

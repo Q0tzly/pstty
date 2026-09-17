@@ -215,10 +215,14 @@ func (s *sessionServer) handleConn(conn net.Conn) {
 
 func (s *sessionServer) serveAttach(conn net.Conn) {
 	s.mu.Lock()
-	if s.active != nil {
-		s.mu.Unlock()
-		conn.Write([]byte("pst: session already has an attached client\r\n"))
-		return
+	if prev := s.active; prev != nil {
+		// Switch the session over to the new client rather than
+		// rejecting it. A stale connection (crashed terminal, a
+		// killed `go run` wrapper, a forgotten nested attach from
+		// inside another session) would otherwise lock the session
+		// out from ever being attached again from a clean client.
+		prev.Write([]byte("\r\npst: attached from elsewhere, disconnecting\r\n"))
+		prev.Close()
 	}
 	// Replay recent output so reattaching isn't silent, under the same
 	// lock as setting s.active so pumpMaster can't interleave a live
