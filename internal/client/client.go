@@ -52,12 +52,6 @@ func Attach(name string) error {
 		proto.WriteResize(conn, ws.Rows, ws.Cols)
 	}
 
-	// There's no scrollback replay: a reattach otherwise shows nothing
-	// until the user types, since whatever prompt the shell last drew was
-	// discarded while nobody was attached. Feed it a Ctrl-L so it redraws
-	// its current line (the same trick dtach uses).
-	proto.WriteData(conn, []byte{0x0C})
-
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
@@ -132,7 +126,7 @@ func forwardStdin(conn net.Conn) (detached bool) {
 // shell inside the session typically renders the same prompt as the
 // outer shell.
 func setTitle(name string) {
-	fmt.Fprintf(os.Stderr, "\033]0;pst:%s\007", name)
+	fmt.Fprintf(os.Stderr, "\033]0;pstty:%s\007", name)
 }
 
 // clearTitle drops the title override set by setTitle. The outer shell's

@@ -116,12 +116,18 @@ func Run(name string) error {
 	return nil
 }
 
+// scrollbackCap bounds how much recent output is kept to replay to the
+// next client, so a session left detached for a long time with a noisy
+// process running doesn't grow this without limit.
+const scrollbackCap = 64 * 1024
+
 type sessionServer struct {
 	master *os.File
 	killCh chan struct{}
 
-	mu     sync.Mutex
-	active net.Conn // current attached client, if any
+	mu         sync.Mutex
+	active     net.Conn // current attached client, if any
+	scrollback []byte   // last scrollbackCap bytes of master output
 }
 
 func (s *sessionServer) pumpMaster() {
@@ -130,6 +136,7 @@ func (s *sessionServer) pumpMaster() {
 		n, err := s.master.Read(buf)
 		if n > 0 {
 			s.mu.Lock()
+			s.appendScrollback(buf[:n])
 			active := s.active
 			s.mu.Unlock()
 			if active != nil {
@@ -146,6 +153,16 @@ func (s *sessionServer) pumpMaster() {
 		if err != nil {
 			return
 		}
+	}
+}
+
+// appendScrollback appends p to the scrollback buffer, trimming from the
+// front if it grows past scrollbackCap. Caller must hold s.mu.
+func (s *sessionServer) appendScrollback(p []byte) {
+	s.scrollback = append(s.scrollback, p...)
+	if over := len(s.scrollback) - scrollbackCap; over > 0 {
+		n := copy(s.scrollback, s.scrollback[over:])
+		s.scrollback = s.scrollback[:n]
 	}
 }
 
@@ -182,6 +199,15 @@ func (s *sessionServer) handleConn(conn net.Conn) {
 		}
 	case proto.HandshakeAttach:
 		s.serveAttach(conn)
+	case proto.HandshakeStatus:
+		s.mu.Lock()
+		attached := s.active != nil
+		s.mu.Unlock()
+		var b byte
+		if attached {
+			b = 1
+		}
+		conn.Write([]byte{b})
 	default:
 		// Unknown handshake: drop the connection.
 	}
@@ -194,8 +220,23 @@ func (s *sessionServer) serveAttach(conn net.Conn) {
 		conn.Write([]byte("pst: session already has an attached client\r\n"))
 		return
 	}
+	// Replay recent output so reattaching isn't silent, under the same
+	// lock as setting s.active so pumpMaster can't interleave a live
+	// write with the replay or duplicate it.
+	hadScrollback := len(s.scrollback) > 0
+	if hadScrollback {
+		conn.Write(s.scrollback)
+	}
 	s.active = conn
 	s.mu.Unlock()
+
+	if !hadScrollback {
+		// Nothing to replay (a brand-new session, most likely): nudge
+		// the shell to draw its prompt so attaching doesn't look hung.
+		// Skipped when there's scrollback, since replaying it already
+		// ends with whatever the shell last drew.
+		s.master.Write([]byte{0x0C})
+	}
 
 	defer func() {
 		s.mu.Lock()

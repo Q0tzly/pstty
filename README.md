@@ -20,7 +20,7 @@ This installs the `pst` binary.
 
 ```sh
 pst <name>       # attach to session <name>, creating it if it doesn't exist
-pst ls           # list known sessions
+pst ls           # list known sessions (attached / detached / dead)
 pst kill <name>  # terminate session <name>
 ```
 
@@ -46,8 +46,8 @@ style = "bold yellow"
 
 - Single client per session: a second `pst <name>` while one is already
   attached is rejected rather than sharing the view.
-- No output scrollback buffer: output produced while nobody is attached is
-  dropped, not replayed on reattach.
+- Scrollback is capped at the last 64 KiB of output produced while nobody
+  was attached; anything beyond that is dropped, not replayed on reattach.
 
 ## License
 
