@@ -11,10 +11,18 @@ The PTY and the client/server transport are implemented directly on
 ## Install
 
 ```sh
-go install github.com/Q0tzly/pstty@latest
+go install github.com/Q0tzly/pstty/cmd/pst@latest
 ```
 
-This installs the `pst` binary.
+Or via [mise](https://mise.jdx.dev):
+
+```sh
+mise use -g go:github.com/Q0tzly/pstty/cmd/pst
+```
+
+Both install the `pst` binary (named after the `cmd/pst` directory —
+`go install github.com/Q0tzly/pstty@latest` on its own would install a
+binary named `pstty` instead).
 
 ## Usage
 
