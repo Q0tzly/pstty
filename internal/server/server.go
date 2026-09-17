@@ -81,8 +81,9 @@ func Run(name string) error {
 	// life of the session (not per client): this keeps the shell from
 	// blocking on a full tty output buffer while nobody is attached, and
 	// avoids two goroutines racing to read the master across a
-	// detach/reattach. Output is simply dropped when no client is
-	// attached (no scrollback replay in this version).
+	// detach/reattach. Output produced while no client is attached is
+	// kept in a bounded scrollback buffer and replayed on the next
+	// attach, rather than forwarded live.
 	masterDone := make(chan struct{})
 	go func() {
 		s.pumpMaster()
