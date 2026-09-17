@@ -47,6 +47,8 @@ style = "bold yellow"
 - Single client per session, no shared view: a second `pst <name>` takes
   over from whichever client was already attached (disconnecting it)
   instead of both seeing the session at once.
+- No nesting: running `pst <name>` from inside an already-attached
+  session is rejected. Detach (`Ctrl+]`) first.
 - Scrollback is capped at the last 64 KiB of output produced while nobody
   was attached; anything beyond that is dropped, not replayed on reattach.
 
@@ -69,8 +71,8 @@ style = "bold yellow"
   is its own independent process, precisely so one session's server
   crashing can't take every other session down with it. Revisiting this
   later means an architecture change, not a patch, so it's not something
-  to do after this is in wider use. Planned instead: reject a nested
-  `pst <name>` outright rather than letting it silently stack.
+  to do after this is in wider use. A nested `pst <name>` is rejected
+  outright instead of letting it silently stack (see Limitations).
 
 ## License
 

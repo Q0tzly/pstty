@@ -58,6 +58,9 @@ func main() {
 }
 
 func runAttach(name string) error {
+	if cur := os.Getenv("PSTTY_SESSION"); cur != "" {
+		return fmt.Errorf("already attached to %q; detach first (Ctrl+])", cur)
+	}
 	if err := launch.EnsureRunning(name); err != nil {
 		return err
 	}
