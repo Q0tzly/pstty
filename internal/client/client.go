@@ -15,9 +15,46 @@ import (
 	"github.com/Q0tzly/pstty/internal/term"
 )
 
-// DetachByte is the control character (Ctrl+]) that ends the local
-// attachment without touching the remote session.
-const DetachByte = 0x1D
+// DefaultDetachByte is the control character (Ctrl+]) that ends the
+// local attachment without touching the remote session, unless
+// overridden (see ParseDetachKey).
+const DefaultDetachByte = 0x1D
+
+// ParseDetachKey parses a caret-notation control character, like "^]"
+// (DefaultDetachByte) or "^^", into its byte value. This lets an attach
+// nested inside another one (e.g. over SSH to a second machine, where
+// $PSTTY_SESSION can't be seen or checked) use a different key, since
+// otherwise the outer pst client always intercepts Ctrl+] first and the
+// inner one never sees it.
+func ParseDetachKey(s string) (byte, error) {
+	invalid := fmt.Errorf("client: invalid detach key %q: want caret notation like \"^]\"", s)
+	if len(s) != 2 || s[0] != '^' {
+		return 0, invalid
+	}
+	c := s[1]
+	if c >= 'a' && c <= 'z' {
+		c -= 'a' - 'A'
+	}
+	switch {
+	case c >= '@' && c <= '_':
+		return c - '@', nil
+	case c == '?':
+		return 0x7f, nil
+	}
+	return 0, invalid
+}
+
+// formatKey renders a control byte as "Ctrl+X" for messages.
+func formatKey(b byte) string {
+	switch {
+	case b < 0x20:
+		return fmt.Sprintf("Ctrl+%c", b+0x40)
+	case b == 0x7f:
+		return "Ctrl+?"
+	default:
+		return fmt.Sprintf("%#x", b)
+	}
+}
 
 // dial connects to name's session socket.
 func dial(name string) (net.Conn, error) {
@@ -33,8 +70,9 @@ func dial(name string) (net.Conn, error) {
 }
 
 // Attach connects to name's socket and bridges the local terminal to it
-// until the session ends or the user detaches with Ctrl+].
-func Attach(name string) error {
+// until the session ends or the user detaches with the detach key
+// (DefaultDetachByte unless detach overrides it).
+func Attach(name string, detach byte) error {
 	conn, err := dial(name)
 	if err != nil {
 		return err
@@ -52,7 +90,7 @@ func Attach(name string) error {
 	}
 	defer term.Restore(stdinFd, state)
 
-	fmt.Fprintf(os.Stderr, "pst: attached to %q (detach: Ctrl+])\r\n", name)
+	fmt.Fprintf(os.Stderr, "pst: attached to %q (detach: %s)\r\n", name, formatKey(detach))
 	setTitle(name)
 	defer clearTitle()
 
@@ -85,7 +123,7 @@ func Attach(name string) error {
 	// keystroke that stops the blocked read. Process exit cleans up the
 	// leftover goroutine.
 	detachedCh := make(chan bool, 1)
-	go func() { detachedCh <- forwardStdin(conn) }()
+	go func() { detachedCh <- forwardStdin(conn, detach) }()
 
 	select {
 	case <-outDone:
@@ -107,13 +145,13 @@ func Attach(name string) error {
 // forwardStdin copies stdin to conn as data frames until either stdin closes
 // (server-driven exit, returns false) or the user presses the detach key
 // (returns true).
-func forwardStdin(conn net.Conn) (detached bool) {
+func forwardStdin(conn net.Conn, detach byte) (detached bool) {
 	buf := make([]byte, 4096)
 	for {
 		n, err := os.Stdin.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
-			if i := indexByte(chunk, DetachByte); i >= 0 {
+			if i := indexByte(chunk, detach); i >= 0 {
 				if i > 0 {
 					proto.WriteData(conn, chunk[:i])
 				}

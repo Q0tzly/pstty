@@ -64,10 +64,20 @@ func runAttach(name string) error {
 	if cur := os.Getenv("PSTTY_SESSION"); cur != "" {
 		return fmt.Errorf("already attached to %q; detach first (Ctrl+])", cur)
 	}
+
+	detach := byte(client.DefaultDetachByte)
+	if key := os.Getenv("PSTTY_DETACH_KEY"); key != "" {
+		var err error
+		detach, err = client.ParseDetachKey(key)
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := launch.EnsureRunning(name); err != nil {
 		return err
 	}
-	return client.Attach(name)
+	return client.Attach(name, detach)
 }
 
 func runSetup() error {

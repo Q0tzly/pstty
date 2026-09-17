@@ -39,6 +39,17 @@ pst setup        # wire $PSTTY_SESSION into .zshrc and starship.toml
 Detach from an attached session with `Ctrl+]`. The shell keeps running on
 the server; reattach later with `pst <name>` to pick up where you left off.
 
+If you `pst` into a session on one machine and then, from inside it, SSH
+to a second machine and `pst` into a session there too, `Ctrl+]` always
+detaches the outer (first) one — it reads your keystrokes before the
+inner one ever sees them, and `$PSTTY_SESSION` can't be seen across the
+SSH hop to guard against it. Give the inner attach a different detach
+key with `$PSTTY_DETACH_KEY` (caret notation, e.g. `^^` for Ctrl+^):
+
+```sh
+PSTTY_DETACH_KEY='^^' pst <name>
+```
+
 Sessions live in a temp directory scoped to your uid
 (`$TMPDIR/pst-<uid>/<name>.sock`), overridable with `$PSTTY_DIR`. Each
 session's server logs to `<name>.log` next to its socket (session start,
