@@ -32,7 +32,15 @@ Sessions live in a temp directory scoped to your uid
 
 The shell inside a session has `$PSTTY_SESSION` set to the session name,
 so it can be added to a prompt (starship, powerlevel10k, etc.) to show
-which session you're in.
+which session you're in. For [starship](https://starship.rs), add to
+`~/.config/starship.toml`:
+
+```toml
+[env_var.PSTTY_SESSION]
+variable = "PSTTY_SESSION"
+format = "[pstty:$env_value]($style) "
+style = "bold yellow"
+```
 
 ## Limitations
 
