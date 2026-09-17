@@ -44,6 +44,8 @@ func Attach(name string) error {
 	}
 	defer term.Restore(stdinFd, state)
 
+	fmt.Fprintf(os.Stderr, "pst: attached to %q (detach: Ctrl+])\r\n", name)
+
 	if ws, err := term.GetSize(stdinFd); err == nil {
 		proto.WriteResize(conn, ws.Rows, ws.Cols)
 	}
@@ -77,12 +79,15 @@ func Attach(name string) error {
 
 	select {
 	case <-outDone:
+		term.Restore(stdinFd, state)
 		fmt.Fprintln(os.Stderr, "\r\n[session ended]")
 	case detached := <-detachedCh:
 		if detached {
+			term.Restore(stdinFd, state)
 			fmt.Fprintln(os.Stderr, "\r\n[detached]")
 		} else {
 			<-outDone
+			term.Restore(stdinFd, state)
 			fmt.Fprintln(os.Stderr, "\r\n[session ended]")
 		}
 	}

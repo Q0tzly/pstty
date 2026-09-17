@@ -30,6 +30,10 @@ the server; reattach later with `pst <name>` to pick up where you left off.
 Sessions live in a temp directory scoped to your uid
 (`$TMPDIR/pst-<uid>/<name>.sock`), overridable with `$PSTTY_DIR`.
 
+The shell inside a session has `$PSTTY_SESSION` set to the session name,
+so it can be added to a prompt (starship, powerlevel10k, etc.) to show
+which session you're in.
+
 ## Limitations
 
 - Single client per session: a second `pst <name>` while one is already
