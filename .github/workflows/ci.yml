@@ -11,6 +11,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # The macos-latest runner's Xcode/dyld hits "missing LC_UUID load
+      # command" on any cgo-linked binary (net's test binaries included)
+      # — unrelated to this project. CGO_ENABLED=0 avoids the external
+      # linker entirely; it also rules out -race there, which needs cgo.
+      CGO_ENABLED: ${{ matrix.os == 'macos-latest' && '0' || '1' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,10 +39,6 @@ jobs:
             exit 1
           fi
 
-      # -race is skipped on macOS: the race-instrumented test binaries hit
-      # a known Go/macOS dyld incompatibility ("missing LC_UUID load
-      # command") that aborts them before any test runs, unrelated to
-      # this project's code.
       - name: Test
         if: runner.os == 'Linux'
         run: go test ./... -race
