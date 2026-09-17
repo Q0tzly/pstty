@@ -44,6 +44,16 @@ format = "[pstty:$env_value]($style) "
 style = "bold yellow"
 ```
 
+If you use zsh, you may notice a highlighted `%` after commands whose
+output doesn't end in a newline (`command not found`, for one) — that's
+zsh's own `PROMPT_SP` end-of-line marker, unrelated to pstty but easy to
+run into inside a session. To turn it off only inside pstty sessions,
+add to `~/.zshrc`:
+
+```zsh
+[[ -n "$PSTTY_SESSION" ]] && unsetopt PROMPT_SP
+```
+
 ## Limitations
 
 - Single client per session, no shared view: a second `pst <name>` takes
