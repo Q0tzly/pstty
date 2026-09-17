@@ -33,5 +33,14 @@ jobs:
             exit 1
           fi
 
+      # -race is skipped on macOS: the race-instrumented test binaries hit
+      # a known Go/macOS dyld incompatibility ("missing LC_UUID load
+      # command") that aborts them before any test runs, unrelated to
+      # this project's code.
       - name: Test
+        if: runner.os == 'Linux'
         run: go test ./... -race
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: go test ./...
