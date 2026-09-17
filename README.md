@@ -14,15 +14,18 @@ The PTY and the client/server transport are implemented directly on
 go install github.com/Q0tzly/pstty/cmd/pst@latest
 ```
 
-Or via [mise](https://mise.jdx.dev):
+Or via [mise](https://mise.jdx.dev), pinned to a released version — at
+the time of writing, `@latest` fails in mise's `go` backend with
+`no versions found ... matching date filter`, seemingly a bug on mise's
+side, unrelated to this project:
 
 ```sh
-mise use -g go:github.com/Q0tzly/pstty/cmd/pst
+mise use -g go:github.com/Q0tzly/pstty/cmd/pst@0.2.0
 ```
 
-Both install the `pst` binary (named after the `cmd/pst` directory —
-`go install github.com/Q0tzly/pstty@latest` on its own would install a
-binary named `pstty` instead).
+Both install the `pst` binary, named after the `cmd/pst` directory (the
+bare module path, `github.com/Q0tzly/pstty`, isn't installable on its
+own — it has no `main` package at its root).
 
 ## Usage
 
