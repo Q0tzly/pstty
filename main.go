@@ -12,6 +12,7 @@ import (
 	"github.com/Q0tzly/pstty/internal/launch"
 	"github.com/Q0tzly/pstty/internal/server"
 	"github.com/Q0tzly/pstty/internal/session"
+	"github.com/Q0tzly/pstty/internal/setup"
 )
 
 func main() {
@@ -34,6 +35,8 @@ func main() {
 	switch args[0] {
 	case "ls":
 		err = runLs()
+	case "setup":
+		err = runSetup()
 	case "kill":
 		if len(args) != 2 {
 			usage()
@@ -67,6 +70,14 @@ func runAttach(name string) error {
 	return client.Attach(name)
 }
 
+func runSetup() error {
+	results, err := setup.Run()
+	for _, r := range results {
+		fmt.Println(r)
+	}
+	return err
+}
+
 func runLs() error {
 	infos, err := session.List()
 	if err != nil {
@@ -94,6 +105,7 @@ func usage() {
   pst <name>       attach to session <name>, creating it if needed
   pst ls           list known sessions
   pst kill <name>  terminate session <name>
+  pst setup        wire $PSTTY_SESSION into .zshrc and starship.toml
 
 detach from an attached session with Ctrl+]`)
 }

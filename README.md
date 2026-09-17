@@ -22,6 +22,7 @@ This installs the `pst` binary.
 pst <name>       # attach to session <name>, creating it if it doesn't exist
 pst ls           # list known sessions (attached / detached / dead)
 pst kill <name>  # terminate session <name>
+pst setup        # wire $PSTTY_SESSION into .zshrc and starship.toml
 ```
 
 Detach from an attached session with `Ctrl+]`. The shell keeps running on
@@ -32,27 +33,21 @@ Sessions live in a temp directory scoped to your uid
 session's server logs to `<name>.log` next to its socket (session start,
 attach/detach, teardown reason) for debugging after the fact.
 
-The shell inside a session has `$PSTTY_SESSION` set to the session name,
-so it can be added to a prompt (starship, powerlevel10k, etc.) to show
-which session you're in. For [starship](https://starship.rs), add to
-`~/.config/starship.toml`:
+The shell inside a session has `$PSTTY_SESSION` set to the session name.
+Run `pst setup` to wire it into your shell:
 
-```toml
-[env_var.PSTTY_SESSION]
-variable = "PSTTY_SESSION"
-format = "[pstty:$env_value]($style) "
-style = "bold yellow"
-```
+- adds `[env_var.PSTTY_SESSION]` to your [starship](https://starship.rs)
+  config (`$STARSHIP_CONFIG`, or `~/.config/starship.toml`, created if
+  it doesn't exist yet) so the prompt shows which session you're in.
+- adds `unsetopt PROMPT_SP` (guarded to only apply inside a pstty
+  session) to `~/.zshrc`, if you have one, to stop zsh's own
+  end-of-line `%` mark from showing up after commands whose output
+  doesn't end in a newline — harmless, but easy to run into inside a
+  session and unrelated to pstty itself.
 
-If you use zsh, you may notice a highlighted `%` after commands whose
-output doesn't end in a newline (`command not found`, for one) — that's
-zsh's own `PROMPT_SP` end-of-line marker, unrelated to pstty but easy to
-run into inside a session. To turn it off only inside pstty sessions,
-add to `~/.zshrc`:
-
-```zsh
-[[ -n "$PSTTY_SESSION" ]] && unsetopt PROMPT_SP
-```
+Both edits are idempotent, so running `pst setup` again later (say,
+after installing starship) picks up whatever wasn't there yet without
+duplicating anything.
 
 ## Limitations
 
