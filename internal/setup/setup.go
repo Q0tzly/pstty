@@ -15,10 +15,11 @@ import (
 
 const (
 	zshMarker  = `[[ -n "$PSTTY_SESSION" ]] && unsetopt PROMPT_SP`
-	zshComment = "# Added by `pst setup` (github.com/Q0tzly/pstty): suppress zsh's \"%\" end-of-line mark inside a pstty session."
+	zshComment = `# Added by pst setup (github.com/Q0tzly/pstty): suppress zsh's "%" end-of-line mark inside a pstty session.`
+	zshBlock   = zshComment + "\n" + zshMarker + "\n"
 
 	starshipHeader = "[env_var.PSTTY_SESSION]"
-	starshipBlock  = `# Added by ` + "`pst setup`" + ` (github.com/Q0tzly/pstty): show the active session in the prompt.
+	starshipBlock  = `# Added by pst setup (github.com/Q0tzly/pstty): show the active session in the prompt.
 [env_var.PSTTY_SESSION]
 variable = "PSTTY_SESSION"
 format = "[pstty:$env_value]($style) "
@@ -74,23 +75,7 @@ func ensureZshrc() (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return fmt.Sprintf("skipped, %s not found", path), nil
-	}
-	if err != nil {
-		return "", err
-	}
-
-	if bytes.Contains(data, []byte(zshMarker)) {
-		return fmt.Sprintf("already configured in %s", path), nil
-	}
-
-	if err := appendBlock(path, data, zshComment+"\n"+zshMarker+"\n"); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("added to %s", path), nil
+	return ensureBlock(path, zshMarker, zshBlock, false)
 }
 
 // ensureStarship appends the PSTTY_SESSION env_var snippet to the
@@ -100,46 +85,53 @@ func ensureStarship() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return ensureBlock(path, starshipHeader, starshipBlock, true)
+}
 
+// ensureBlock makes sure block is present in the file at path, appending
+// it (separated from any existing content by a blank line) if marker
+// isn't already there. If the file doesn't exist, createIfMissing
+// decides whether it (and its parent directory) gets created, or the
+// step is skipped instead.
+func ensureBlock(path, marker, block string, createIfMissing bool) (string, error) {
 	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
+	missing := os.IsNotExist(err)
+	if err != nil && !missing {
 		return "", err
 	}
-	existed := err == nil
+	if missing && !createIfMissing {
+		return fmt.Sprintf("skipped, %s not found", path), nil
+	}
 
-	if bytes.Contains(data, []byte(starshipHeader)) {
+	if bytes.Contains(data, []byte(marker)) {
 		return fmt.Sprintf("already configured in %s", path), nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
+	if missing {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
 	}
-	if err := appendBlock(path, data, starshipBlock); err != nil {
-		return "", err
-	}
-	if existed {
-		return fmt.Sprintf("added to %s", path), nil
-	}
-	return fmt.Sprintf("created %s", path), nil
-}
 
-// appendBlock appends block to the file at path (creating it if it
-// doesn't exist), separating it from any existing content with a blank
-// line.
-func appendBlock(path string, existing []byte, block string) error {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer f.Close()
 
 	prefix := ""
-	if len(existing) > 0 {
+	if len(data) > 0 {
 		prefix = "\n"
-		if existing[len(existing)-1] != '\n' {
+		if data[len(data)-1] != '\n' {
 			prefix = "\n\n"
 		}
 	}
-	_, err = fmt.Fprint(f, prefix+block)
-	return err
+	if _, err := fmt.Fprint(f, prefix+block); err != nil {
+		return "", err
+	}
+
+	if missing {
+		return fmt.Sprintf("created %s", path), nil
+	}
+	return fmt.Sprintf("added to %s", path), nil
 }

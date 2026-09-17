@@ -19,17 +19,25 @@ import (
 // attachment without touching the remote session.
 const DetachByte = 0x1D
 
+// dial connects to name's session socket.
+func dial(name string) (net.Conn, error) {
+	sockPath, err := session.SockPath(name)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		return nil, fmt.Errorf("client: connect: %w", err)
+	}
+	return conn, nil
+}
+
 // Attach connects to name's socket and bridges the local terminal to it
 // until the session ends or the user detaches with Ctrl+].
 func Attach(name string) error {
-	sockPath, err := session.SockPath(name)
+	conn, err := dial(name)
 	if err != nil {
 		return err
-	}
-
-	conn, err := net.Dial("unix", sockPath)
-	if err != nil {
-		return fmt.Errorf("client: connect: %w", err)
 	}
 	defer conn.Close()
 
@@ -147,13 +155,9 @@ func indexByte(b []byte, c byte) int {
 
 // Kill asks name's server to terminate the shell and shut down.
 func Kill(name string) error {
-	sockPath, err := session.SockPath(name)
+	conn, err := dial(name)
 	if err != nil {
 		return err
-	}
-	conn, err := net.Dial("unix", sockPath)
-	if err != nil {
-		return fmt.Errorf("client: connect: %w", err)
 	}
 	defer conn.Close()
 	_, err = conn.Write([]byte{byte(proto.HandshakeKill)})

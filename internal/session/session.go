@@ -57,7 +57,6 @@ func LogPath(name string) (string, error) {
 // Info describes one on-disk session socket.
 type Info struct {
 	Name     string
-	Path     string
 	Alive    bool
 	Attached bool // only meaningful when Alive
 }
@@ -83,7 +82,7 @@ func List() ([]Info, error) {
 		name := strings.TrimSuffix(e.Name(), sockSuffix)
 		path := filepath.Join(dir, e.Name())
 		alive, attached := Status(path)
-		infos = append(infos, Info{Name: name, Path: path, Alive: alive, Attached: attached})
+		infos = append(infos, Info{Name: name, Alive: alive, Attached: attached})
 	}
 	return infos, nil
 }
