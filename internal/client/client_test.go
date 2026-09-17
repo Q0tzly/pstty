@@ -51,3 +51,19 @@ func TestFormatKey(t *testing.T) {
 		}
 	}
 }
+
+func TestTrimEcho(t *testing.T) {
+	output := "\x1b[2mnoise\x1b[0m\r\necho BASE64PAYLOAD | base64 -d | bash\r\nreal output\nmore output\n"
+	got := trimEcho(output, "BASE64PAYLOAD")
+	want := "real output\nmore output\n"
+	if got != want {
+		t.Errorf("trimEcho(...) = %q, want %q", got, want)
+	}
+}
+
+func TestTrimEchoNeedleMissing(t *testing.T) {
+	output := "unrelated output\n"
+	if got := trimEcho(output, "NOT_PRESENT"); got != output {
+		t.Errorf("trimEcho with a missing needle changed the output: got %q, want %q", got, output)
+	}
+}

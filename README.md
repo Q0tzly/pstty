@@ -30,14 +30,42 @@ own — it has no `main` package at its root).
 ## Usage
 
 ```sh
-pst <name>       # attach to session <name>, creating it if it doesn't exist
-pst ls           # list known sessions (attached / detached / dead)
-pst kill <name>  # terminate session <name>
-pst setup        # wire $PSTTY_SESSION into .zshrc and starship.toml
+pst <name>            # attach to session <name>, creating it if it doesn't exist
+pst <name> -c <cmd>   # run cmd in session <name> and print its output
+pst watch <name>      # view session <name> read-only, without attaching
+pst ls                # list known sessions (attached / detached / dead)
+pst kill <name>       # terminate session <name>
+pst setup             # wire $PSTTY_SESSION into .zshrc and starship.toml
 ```
 
-Detach from an attached session with `Ctrl+]`. The shell keeps running on
-the server; reattach later with `pst <name>` to pick up where you left off.
+Detach from an attached or watched session with `Ctrl+]`. The shell keeps
+running on the server; reattach later with `pst <name>` to pick up where
+you left off.
+
+`pst <name> -c <cmd>` runs a single command non-interactively — no real
+terminal required, so it works from a plain pipe or another program
+driving it, not just a shell someone's typing into. It base64-encodes
+`cmd` and pipes it through `bash` on the far side (so quoting in `cmd`
+can't collide with the raw keystroke stream), then watches for a random
+completion marker to know when it's done and to recover the real exit
+code, which becomes `pst`'s own exit code. It evicts an existing
+attached client the same way a normal attach would and disconnects as
+soon as the command finishes, rather than staying attached.
+
+`pst watch <name>` opens a read-only view: you see everything the
+attached client sees, live, but anything you type is discarded rather
+than reaching the shell, and it never takes over (or evicts) the
+attached client. Useful for watching another person's — or an agent's —
+session without any risk of interfering with it. To take over instead
+of just watching, detach and run a normal `pst <name>`.
+
+Reattaching (or `pst watch`) replays the session's recent scrollback so
+it isn't silent, followed by a `--- live ---` marker so replayed history
+isn't mistaken for what's happening right now (a scrollback line that
+happens to read `Password:`, say). Set `$PSTTY_NO_REPLAY=1` to skip the
+replay entirely for a lighter reattach that only shows what happens from
+here on — `pst <name> -c` always does this, since a one-shot command has
+no reason to see old history.
 
 If you `pst` into a session on one machine and then, from inside it, SSH
 to a second machine and `pst` into a session there too, `Ctrl+]` always
@@ -73,9 +101,11 @@ duplicating anything.
 
 ## Limitations
 
-- Single client per session, no shared view: a second `pst <name>` takes
-  over from whichever client was already attached (disconnecting it)
-  instead of both seeing the session at once.
+- Single read-write client per session: a second `pst <name>` takes over
+  from whichever client was already attached (disconnecting it, with a
+  message to both sides) instead of both being able to type into the
+  session at once. `pst watch <name>` gives read-only access to any
+  number of others at the same time; only writing is exclusive.
 - No nesting: running `pst <name>` from inside an already-attached
   session is rejected. Detach (`Ctrl+]`) first.
 - Scrollback is capped at the last 64 KiB of output produced while nobody
@@ -83,11 +113,12 @@ duplicating anything.
 
 ## Ideas not pursued
 
-- Shared/multi-client view (several `pst <name>` on the same session at
-  once, tmux `-x`-style): would need `pumpMaster` to broadcast to a set
-  of clients instead of one, a policy for interleaving input from more
-  than one client, and a policy for whose terminal size wins. Bigger
-  than this project's scope for now, but not ruled out.
+- Shared multi-*writer* view (more than one `pst <name>` typing into the
+  same session at once, tmux `-x`-style): would need a policy for
+  interleaving input from more than one client and a policy for whose
+  terminal size wins, on top of the broadcast-to-many-clients plumbing
+  `pst watch` already added for the read-only case. Bigger than this
+  project's scope for now, but not ruled out.
 
 - Seamless session switching (running `pst B` from inside session A
   detaches A and attaches B on the same terminal, instead of nesting):

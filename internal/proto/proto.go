@@ -22,6 +22,14 @@ const (
 	// HandshakeStatus asks the server to report whether a client is
 	// currently attached, as a single reply byte (0 or 1), then close.
 	HandshakeStatus Handshake = 0x03
+	// HandshakeAttachNoReplay is like HandshakeAttach but skips the
+	// scrollback replay, for a lighter reattach (or a one-shot command)
+	// that only cares about what happens from here on.
+	HandshakeAttachNoReplay Handshake = 0x04
+	// HandshakeWatch opens a read-only view of the session: it receives
+	// output like an attach, but its input is never forwarded to the
+	// PTY and it never takes over as the active (writing) client.
+	HandshakeWatch Handshake = 0x05
 )
 
 // FrameType tags a client -> server frame.

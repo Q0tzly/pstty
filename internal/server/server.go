@@ -75,7 +75,7 @@ func Run(name string) error {
 		close(shellDone)
 	}()
 
-	s := &sessionServer{master: p.Master, killCh: make(chan struct{})}
+	s := &sessionServer{master: p.Master, killCh: make(chan struct{}), watchers: make(map[net.Conn]bool)}
 
 	// A single long-lived reader drains the PTY master for the whole
 	// life of the session (not per client): this keeps the shell from
@@ -110,6 +110,9 @@ func Run(name string) error {
 	if s.active != nil {
 		s.active.Close()
 	}
+	for w := range s.watchers {
+		w.Close()
+	}
 	s.mu.Unlock()
 	<-acceptDone
 	cmd.Process.Kill()
@@ -128,8 +131,9 @@ type sessionServer struct {
 	killCh chan struct{}
 
 	mu         sync.Mutex
-	active     net.Conn // current attached client, if any
-	scrollback []byte   // last scrollbackCap bytes of master output
+	active     net.Conn          // current attached (read-write) client, if any
+	watchers   map[net.Conn]bool // read-only clients watching the output
+	scrollback []byte            // last scrollbackCap bytes of master output
 }
 
 func (s *sessionServer) pumpMaster() {
@@ -140,7 +144,12 @@ func (s *sessionServer) pumpMaster() {
 			s.mu.Lock()
 			s.appendScrollback(buf[:n])
 			active := s.active
+			watchers := make([]net.Conn, 0, len(s.watchers))
+			for w := range s.watchers {
+				watchers = append(watchers, w)
+			}
 			s.mu.Unlock()
+
 			if active != nil {
 				if _, werr := active.Write(buf[:n]); werr != nil {
 					s.mu.Lock()
@@ -149,6 +158,14 @@ func (s *sessionServer) pumpMaster() {
 					}
 					s.mu.Unlock()
 					active.Close()
+				}
+			}
+			for _, w := range watchers {
+				if _, werr := w.Write(buf[:n]); werr != nil {
+					s.mu.Lock()
+					delete(s.watchers, w)
+					s.mu.Unlock()
+					w.Close()
 				}
 			}
 		}
@@ -200,7 +217,11 @@ func (s *sessionServer) handleConn(conn net.Conn) {
 			close(s.killCh)
 		}
 	case proto.HandshakeAttach:
-		s.serveAttach(conn)
+		s.serveAttach(conn, true)
+	case proto.HandshakeAttachNoReplay:
+		s.serveAttach(conn, false)
+	case proto.HandshakeWatch:
+		s.serveWatch(conn)
 	case proto.HandshakeStatus:
 		s.mu.Lock()
 		attached := s.active != nil
@@ -215,7 +236,12 @@ func (s *sessionServer) handleConn(conn net.Conn) {
 	}
 }
 
-func (s *sessionServer) serveAttach(conn net.Conn) {
+// liveMarker separates replayed scrollback from what's actually
+// happening now, so it isn't mistaken for current state (a stale
+// "Password:" prompt sitting in scrollback, say).
+const liveMarker = "\r\n\x1b[2m--- live ---\x1b[0m\r\n"
+
+func (s *sessionServer) serveAttach(conn net.Conn, replay bool) {
 	s.mu.Lock()
 	if prev := s.active; prev != nil {
 		// Switch the session over to the new client rather than
@@ -226,22 +252,24 @@ func (s *sessionServer) serveAttach(conn net.Conn) {
 		log.Print("pst: evicting previous client for a new attach")
 		prev.Write([]byte("\r\npst: attached from elsewhere, disconnecting\r\n"))
 		prev.Close()
+		conn.Write([]byte("pst: an existing client was disconnected to make room for this attach\r\n"))
 	}
 	// Replay recent output so reattaching isn't silent, under the same
 	// lock as setting s.active so pumpMaster can't interleave a live
 	// write with the replay or duplicate it.
-	hadScrollback := len(s.scrollback) > 0
+	hadScrollback := replay && len(s.scrollback) > 0
 	if hadScrollback {
 		conn.Write(s.scrollback)
+		conn.Write([]byte(liveMarker))
 	}
 	s.active = conn
 	s.mu.Unlock()
 	log.Print("pst: client attached")
 
 	if !hadScrollback {
-		// Nothing to replay (a brand-new session, most likely): nudge
-		// the shell to draw its prompt so attaching doesn't look hung.
-		// Skipped when there's scrollback, since replaying it already
+		// Nothing replayed (a brand-new session, or replay was skipped):
+		// nudge the shell to draw its prompt so attaching doesn't look
+		// hung. Skipped when scrollback was replayed, since that already
 		// ends with whatever the shell last drew.
 		s.master.Write([]byte{0x0C})
 	}
@@ -270,6 +298,36 @@ func (s *sessionServer) serveAttach(conn net.Conn) {
 			if err == nil {
 				term.SetSize(int(s.master.Fd()), term.Winsize{Rows: rows, Cols: cols})
 			}
+		}
+	}
+}
+
+// serveWatch adds conn as a read-only observer: it receives output like
+// an attach, but never writes to the PTY and never becomes (or evicts)
+// the active client.
+func (s *sessionServer) serveWatch(conn net.Conn) {
+	s.mu.Lock()
+	hadScrollback := len(s.scrollback) > 0
+	if hadScrollback {
+		conn.Write(s.scrollback)
+		conn.Write([]byte(liveMarker))
+	}
+	s.watchers[conn] = true
+	s.mu.Unlock()
+	log.Print("pst: watcher attached")
+
+	defer func() {
+		s.mu.Lock()
+		delete(s.watchers, conn)
+		s.mu.Unlock()
+		log.Print("pst: watcher detached")
+	}()
+
+	// Nothing a watcher sends is acted on; just block until it
+	// disconnects (or the session tears down conn out from under us).
+	for {
+		if _, err := proto.ReadFrame(conn); err != nil {
+			return
 		}
 	}
 }

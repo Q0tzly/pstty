@@ -84,7 +84,7 @@ func newTestServer(t *testing.T) (*sessionServer, *os.File) {
 		masterR.Close()
 		masterW.Close()
 	})
-	return &sessionServer{master: masterW, killCh: make(chan struct{})}, masterR
+	return &sessionServer{master: masterW, killCh: make(chan struct{}), watchers: make(map[net.Conn]bool)}, masterR
 }
 
 func TestServeAttachReplaysScrollbackAndNudges(t *testing.T) {
@@ -95,7 +95,7 @@ func TestServeAttachReplaysScrollbackAndNudges(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		s.serveAttach(serverConn)
+		s.serveAttach(serverConn, true)
 		close(done)
 	}()
 
@@ -122,16 +122,19 @@ func TestServeAttachReplaysExistingScrollback(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		s.serveAttach(serverConn)
+		s.serveAttach(serverConn, true)
 		close(done)
 	}()
 
-	buf := make([]byte, len(s.scrollback))
+	buf := make([]byte, len(s.scrollback)+len(liveMarker))
 	if _, err := io.ReadFull(clientConn, buf); err != nil {
 		t.Fatalf("read replay: %v", err)
 	}
-	if string(buf) != "previous output\n" {
-		t.Errorf("replay = %q, want %q", buf, "previous output\n")
+	if string(buf[:len(s.scrollback)]) != "previous output\n" {
+		t.Errorf("replay = %q, want %q", buf[:len(s.scrollback)], "previous output\n")
+	}
+	if string(buf[len(s.scrollback):]) != liveMarker {
+		t.Errorf("marker after replay = %q, want %q", buf[len(s.scrollback):], liveMarker)
 	}
 
 	clientConn.Close()
@@ -145,19 +148,20 @@ func TestServeAttachEvictsPreviousClient(t *testing.T) {
 	serverA, clientA := connPair(t)
 	doneA := make(chan struct{})
 	go func() {
-		s.serveAttach(serverA)
+		s.serveAttach(serverA, true)
 		close(doneA)
 	}()
 
-	// Drain A's scrollback replay so its goroutine moves on to blocking
-	// in ReadFrame, matching real client behavior.
-	io.ReadFull(clientA, make([]byte, len(s.scrollback)))
+	// Drain A's scrollback replay (plus the live marker that follows it)
+	// so its goroutine moves on to blocking in ReadFrame, matching real
+	// client behavior.
+	io.ReadFull(clientA, make([]byte, len(s.scrollback)+len(liveMarker)))
 
 	serverB, clientB := connPair(t)
 	defer clientB.Close()
 	doneB := make(chan struct{})
 	go func() {
-		s.serveAttach(serverB)
+		s.serveAttach(serverB, true)
 		close(doneB)
 	}()
 
@@ -179,6 +183,15 @@ func TestServeAttachEvictsPreviousClient(t *testing.T) {
 	s.mu.Unlock()
 	if active != serverB {
 		t.Error("s.active is not the new client after eviction")
+	}
+
+	bufB := make([]byte, 4096)
+	nB, err := clientB.Read(bufB)
+	if err != nil {
+		t.Fatalf("clientB read: %v", err)
+	}
+	if !bytes.Contains(bufB[:nB], []byte("existing client was disconnected")) {
+		t.Errorf("clientB got %q, want the takeover notice", bufB[:nB])
 	}
 
 	clientB.Close()
@@ -207,7 +220,7 @@ func TestHandleConnStatus(t *testing.T) {
 
 	serverConn, clientConn := connPair(t)
 	defer clientConn.Close()
-	go s.serveAttach(serverConn)
+	go s.serveAttach(serverConn, true)
 	// Empty scrollback means serveAttach sets s.active and unlocks
 	// before writing the redraw nudge to master, so seeing the nudge
 	// here guarantees s.active is already set.
@@ -217,5 +230,125 @@ func TestHandleConnStatus(t *testing.T) {
 
 	if !status() {
 		t.Error("status = detached, want attached")
+	}
+}
+
+func TestServeAttachNoReplaySkipsScrollback(t *testing.T) {
+	s, masterR := newTestServer(t)
+	s.scrollback = []byte("previous output\n")
+
+	serverConn, clientConn := connPair(t)
+	defer clientConn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		s.serveAttach(serverConn, false)
+		close(done)
+	}()
+
+	// replay=false means hadScrollback is false regardless of
+	// s.scrollback, so serveAttach falls into the redraw-nudge path
+	// instead of writing the scrollback/marker to the client.
+	nudge := make([]byte, 1)
+	if _, err := masterR.Read(nudge); err != nil {
+		t.Fatalf("read nudge: %v", err)
+	}
+	if nudge[0] != 0x0C {
+		t.Errorf("nudge byte = %#x, want Ctrl-L (0x0C)", nudge[0])
+	}
+
+	clientConn.Close()
+	<-done
+}
+
+func TestServeWatchReplaysAndRegistersReadOnly(t *testing.T) {
+	s, _ := newTestServer(t)
+	s.scrollback = []byte("history\n")
+
+	serverConn, clientConn := connPair(t)
+	defer clientConn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		s.serveWatch(serverConn)
+		close(done)
+	}()
+
+	// The watcher gets the replay + marker like a normal attach.
+	buf := make([]byte, len(s.scrollback)+len(liveMarker))
+	if _, err := io.ReadFull(clientConn, buf); err != nil {
+		t.Fatalf("read replay: %v", err)
+	}
+	if string(buf[:len(s.scrollback)]) != "history\n" {
+		t.Errorf("replay = %q, want %q", buf[:len(s.scrollback)], "history\n")
+	}
+
+	// A watcher never becomes s.active, so a normal attach afterward
+	// wouldn't evict it as a "previous client".
+	s.mu.Lock()
+	if s.active != nil {
+		t.Error("watcher was set as s.active")
+	}
+	if !s.watchers[serverConn] {
+		t.Error("watcher wasn't registered in s.watchers")
+	}
+	s.mu.Unlock()
+
+	// Anything the watcher sends is just read and dropped, never
+	// written to the master (there's no case in serveWatch's loop that
+	// acts on frame contents at all).
+	proto.WriteData(clientConn, []byte("ignored input"))
+
+	clientConn.Close()
+	<-done
+
+	s.mu.Lock()
+	_, stillWatching := s.watchers[serverConn]
+	s.mu.Unlock()
+	if stillWatching {
+		t.Error("watcher not removed from s.watchers after disconnect")
+	}
+}
+
+func TestPumpMasterBroadcastsToActiveAndWatchers(t *testing.T) {
+	masterR, masterW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	defer masterR.Close()
+	defer masterW.Close()
+
+	s := &sessionServer{master: masterR, killCh: make(chan struct{}), watchers: make(map[net.Conn]bool)}
+	go s.pumpMaster()
+
+	activeServer, activeClient := connPair(t)
+	defer activeClient.Close()
+	s.mu.Lock()
+	s.active = activeServer
+	s.mu.Unlock()
+
+	watchServer, watchClient := connPair(t)
+	defer watchClient.Close()
+	s.mu.Lock()
+	s.watchers[watchServer] = true
+	s.mu.Unlock()
+
+	masterW.Write([]byte("broadcast me\n"))
+
+	for _, c := range []net.Conn{activeClient, watchClient} {
+		buf := make([]byte, len("broadcast me\n"))
+		if _, err := io.ReadFull(c, buf); err != nil {
+			t.Fatalf("read broadcast: %v", err)
+		}
+		if string(buf) != "broadcast me\n" {
+			t.Errorf("broadcast output = %q, want %q", buf, "broadcast me\n")
+		}
+	}
+
+	s.mu.Lock()
+	got := string(s.scrollback)
+	s.mu.Unlock()
+	if got != "broadcast me\n" {
+		t.Errorf("scrollback = %q, want %q", got, "broadcast me\n")
 	}
 }
