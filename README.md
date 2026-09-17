@@ -50,6 +50,14 @@ style = "bold yellow"
 - Scrollback is capped at the last 64 KiB of output produced while nobody
   was attached; anything beyond that is dropped, not replayed on reattach.
 
+## Ideas not pursued
+
+- Shared/multi-client view (several `pst <name>` on the same session at
+  once, tmux `-x`-style): would need `pumpMaster` to broadcast to a set
+  of clients instead of one, a policy for interleaving input from more
+  than one client, and a policy for whose terminal size wins. Bigger
+  than this project's scope for now, but not ruled out.
+
 ## License
 
 MIT
