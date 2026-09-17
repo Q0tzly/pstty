@@ -43,16 +43,26 @@ func EnsureRunning(name string) error {
 		return fmt.Errorf("launch: find executable: %w", err)
 	}
 
-	cmd := exec.Command(exe, serverArg, name)
-	cmd.Stdin = nil
 	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("launch: open %s: %w", os.DevNull, err)
 	}
 	defer devnull.Close()
+
+	logPath, err := session.LogPath(name)
+	if err != nil {
+		return err
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("launch: open log %s: %w", logPath, err)
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command(exe, serverArg, name)
 	cmd.Stdin = devnull
-	cmd.Stdout = devnull
-	cmd.Stderr = devnull
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err := cmd.Start(); err != nil {

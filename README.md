@@ -28,7 +28,9 @@ Detach from an attached session with `Ctrl+]`. The shell keeps running on
 the server; reattach later with `pst <name>` to pick up where you left off.
 
 Sessions live in a temp directory scoped to your uid
-(`$TMPDIR/pst-<uid>/<name>.sock`), overridable with `$PSTTY_DIR`.
+(`$TMPDIR/pst-<uid>/<name>.sock`), overridable with `$PSTTY_DIR`. Each
+session's server logs to `<name>.log` next to its socket (session start,
+attach/detach, teardown reason) for debugging after the fact.
 
 The shell inside a session has `$PSTTY_SESSION` set to the session name,
 so it can be added to a prompt (starship, powerlevel10k, etc.) to show

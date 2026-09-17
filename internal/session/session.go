@@ -13,7 +13,10 @@ import (
 	"github.com/Q0tzly/pstty/internal/proto"
 )
 
-const sockSuffix = ".sock"
+const (
+	sockSuffix = ".sock"
+	logSuffix  = ".log"
+)
 
 // Dir returns the directory pstty stores session sockets in, creating it if
 // necessary. It honors $PSTTY_DIR, then falls back to a pst/ subdirectory of
@@ -40,6 +43,15 @@ func SockPath(name string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, name+sockSuffix), nil
+}
+
+// LogPath returns the server log path for the named session.
+func LogPath(name string) (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name+logSuffix), nil
 }
 
 // Info describes one on-disk session socket.

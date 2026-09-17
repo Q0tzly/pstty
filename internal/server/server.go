@@ -57,6 +57,7 @@ func Run(name string) error {
 		p.Close()
 		return err
 	}
+	log.Printf("pst: started session %q (shell=%s, pid=%d)", name, shell, cmd.Process.Pid)
 	// The slave fd's controlling-terminal duty now belongs to the child;
 	// the server only needs the master end.
 	p.Slave.Close()
@@ -221,6 +222,7 @@ func (s *sessionServer) serveAttach(conn net.Conn) {
 		// killed `go run` wrapper, a forgotten nested attach from
 		// inside another session) would otherwise lock the session
 		// out from ever being attached again from a clean client.
+		log.Print("pst: evicting previous client for a new attach")
 		prev.Write([]byte("\r\npst: attached from elsewhere, disconnecting\r\n"))
 		prev.Close()
 	}
@@ -233,6 +235,7 @@ func (s *sessionServer) serveAttach(conn net.Conn) {
 	}
 	s.active = conn
 	s.mu.Unlock()
+	log.Print("pst: client attached")
 
 	if !hadScrollback {
 		// Nothing to replay (a brand-new session, most likely): nudge
@@ -246,6 +249,7 @@ func (s *sessionServer) serveAttach(conn net.Conn) {
 		s.mu.Lock()
 		if s.active == conn {
 			s.active = nil
+			log.Print("pst: client detached")
 		}
 		s.mu.Unlock()
 	}()
