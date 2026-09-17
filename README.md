@@ -58,6 +58,20 @@ style = "bold yellow"
   than one client, and a policy for whose terminal size wins. Bigger
   than this project's scope for now, but not ruled out.
 
+- Seamless session switching (running `pst B` from inside session A
+  detaches A and attaches B on the same terminal, instead of nesting):
+  not achievable by the attach client alone, since a `pst B` invoked
+  from A's shell is a child process wired to A's PTY, with no path to
+  the real terminal. The only way to make it work is tmux's approach: a
+  single central server holding every session, with clients as thin
+  renderers the server can repoint on command. That's a deliberate
+  non-goal here — pstty is closer to `screen`, where each named session
+  is its own independent process, precisely so one session's server
+  crashing can't take every other session down with it. Revisiting this
+  later means an architecture change, not a patch, so it's not something
+  to do after this is in wider use. Planned instead: reject a nested
+  `pst <name>` outright rather than letting it silently stack.
+
 ## License
 
 MIT
