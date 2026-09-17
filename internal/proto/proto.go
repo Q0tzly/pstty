@@ -19,6 +19,9 @@ const (
 	HandshakeAttach Handshake = 0x01
 	// HandshakeKill asks the server to terminate the shell and exit.
 	HandshakeKill Handshake = 0x02
+	// HandshakeStatus asks the server to report whether a client is
+	// currently attached, as a single reply byte (0 or 1), then close.
+	HandshakeStatus Handshake = 0x03
 )
 
 // FrameType tags a client -> server frame.

@@ -76,7 +76,10 @@ func runLs() error {
 	for _, info := range infos {
 		status := "dead"
 		if info.Alive {
-			status = "running"
+			status = "detached"
+			if info.Attached {
+				status = "attached"
+			}
 		}
 		fmt.Printf("%s\t%s\n", info.Name, status)
 	}
