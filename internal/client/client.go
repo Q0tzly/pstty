@@ -45,6 +45,8 @@ func Attach(name string) error {
 	defer term.Restore(stdinFd, state)
 
 	fmt.Fprintf(os.Stderr, "pst: attached to %q (detach: Ctrl+])\r\n", name)
+	setTitle(name)
+	defer clearTitle()
 
 	if ws, err := term.GetSize(stdinFd); err == nil {
 		proto.WriteResize(conn, ws.Rows, ws.Cols)
@@ -117,6 +119,21 @@ func forwardStdin(conn net.Conn) (detached bool) {
 			return false
 		}
 	}
+}
+
+// setTitle sets the terminal window/tab title to name so it stays visible
+// as an at-a-glance indicator of which session is attached, since the
+// shell inside the session typically renders the same prompt as the
+// outer shell.
+func setTitle(name string) {
+	fmt.Fprintf(os.Stderr, "\033]0;pst:%s\007", name)
+}
+
+// clearTitle drops the title override set by setTitle. The outer shell's
+// own prompt hooks (if any) repaint the title on the next redraw either
+// way; this just avoids leaving a stale "pst:name" title if it doesn't.
+func clearTitle() {
+	fmt.Fprint(os.Stderr, "\033]0;\007")
 }
 
 func indexByte(b []byte, c byte) int {
